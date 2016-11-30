@@ -18,6 +18,7 @@ from .utilities import copy
 from .traces import (VoltageTrace,
                      ExperimentalPressureTrace,
                      AltExperimentalPressureTrace,
+                     iBuOHExperimentalPressureTrace,
                      TemperatureFromPressure,
                      VolumeFromPressure,
                      PressureFromVolume,
@@ -519,6 +520,30 @@ class Condition(object):
         copy(copy_str)
 
 
+class iBuOHCondition(Condition):
+    """Class containing all of the isobutanol experiments at a condition
+    """
+
+    def add_experiment(self, file_name=None):
+        """Add an experiment to the Condition.
+
+        Parameters
+        ----------
+        file_name : `str` or `None`
+            Filename of the file with the voltage trace of the
+            experiment to be added.
+        """
+        exp = iBuOHExperiment(file_name)
+        if exp.pressure_trace.is_reactive:
+            self.reactive_experiments[exp.file_path.name] = exp
+            if self.plotting:
+                self.plot_reactive_figures(exp)
+        else:
+            self.nonreactive_experiments[exp.file_path.name] = exp
+            if self.plotting:
+                self.plot_nonreactive_figure(exp)
+
+
 class AltCondition(Condition):
     """Class containing all of the alternate experiments at a condition
     """
@@ -855,6 +880,68 @@ class Experiment(object):
             m.window.showMaximized()
 
 
+class iBuOHExperiment(Experiment):
+    """Contains all the information of a single isobutanol RCM experiment
+    """
+    def __init__(self, file_path=None):
+        self.resolve_file_path(file_path)
+        self.experiment_parameters = self.parse_file_name(self.file_path)
+        self.pressure_trace = iBuOHExperimentalPressureTrace(self.file_path,
+                                                             self.experiment_parameters['pin'])
+        self.process_pressure_trace()
+        self.copy_to_clipboard()
+
+    def parse_file_name(self, file_path):
+        """Parse the file name of an experimental trace.
+
+        Parameters
+        ----------
+        file_path : :class:`pathlib.Path`
+            The Path object that contains the path of the current experimental data file.
+            The filename associated with the path should be in the following format::
+
+                [NR_]XX_in_YY_mm_ZZZK-AAAAt-DD-Mon-YY-Time.txt
+
+            where:
+
+            - ``[NR_]``: Optional non-reactive indicator
+            - ``XX``: inches of spacers
+            - ``YY``: millimeters of shims
+            - ``ZZZ``: Initial temperature in Kelvin
+            - ``AAAA``: Initial pressure in Torr
+            - ``DD-Mon-YY-Time``: Day, Month, Year, and Time of experiment
+
+        Returns
+        -------
+        :class:`dict`
+            Dictionary containing the parameters of the experiment with the
+            following names:
+
+            - ``spacers``: Inches of spacers
+            - ``shims``: Millimeters of shims
+            - ``Tin``: Initial temperature in Kelvin
+            - ``pin``: Initial pressure in Torr
+            - ``time_of_day``: Time of day of the experiment
+            - ``date``: Date of the experiment with the time
+            - ``date_year``: Date of the experiment with the year
+        """
+        name_parts = {}
+        fname = file_path.name.lstrip('NR_')
+        fname = fname.rstrip('.txt')
+        name_split = fname.split('_')
+        name_split_end = name_split[4].split('-', maxsplit=2)
+        data_date = datetime.strptime(name_split_end[2], '%d-%b-%y-%H%M')
+
+        name_parts['spacers'] = int(name_split[0])/10
+        name_parts['shims'] = int(name_split[2])
+        name_parts['Tin'] = int(name_split_end[0][:-1])
+        name_parts['pin'] = int(name_split_end[1][:-1])
+        name_parts['time_of_day'] = data_date.strftime('%H%M')
+        name_parts['date'] = data_date.strftime('%d-%b-%H:%M')
+        name_parts['date_year'] = data_date.strftime('%d-%b-%y')
+        return name_parts
+
+
 class AltExperiment(Experiment):
     """Contains all the information of a single alternate RCM experiment
     """
@@ -995,6 +1082,45 @@ def process_alt_folder(path='.', plot=False):
             case.experiment_parameters['pin'], case.experiment_parameters['Tin'],
             case.pressure_trace.p_EOC, case.ignition_delay, case.first_stage, case.T_EOC,
             case.experiment_parameters['spacers'], case.experiment_parameters['shims'], f.name])))
+        if plot:
+            ax.plot(case.pressure_trace.zeroed_time, case.pressure_trace.pressure,
+                    label=case.experiment_parameters['date'])
+
+    copy('\n'.join(sorted(result)))
+    print('Finished')
+
+
+def process_ibuoh_folder(path='.', plot=False):
+    """Process a folder of alternative experimental files.
+
+    Process a folder containing files with reactive experiments to
+    calculate the ignition delays and copy a table with the results
+    to the clipboard.
+
+    Parameters
+    ----------
+    path : `str`, optional
+        Path to folder to be analyzed. Defaults to the current folder.
+    plot : `bool`, optional
+        True to enable plotting. False by default.
+    """
+    p = Path(path)
+    result = []
+
+    if plot:
+        fig = plt.figure()
+        ax = fig.add_subplot(1, 1, 1)
+
+    for f in p.glob('[0-3]*.txt'):
+        if 'NR' in f.name:
+            continue
+        print(f)
+        case = iBuOHExperiment(f.resolve())
+        result.append('\t'.join(map(str, [
+            case.experiment_parameters['time_of_day'],
+            case.experiment_parameters['pin'], case.experiment_parameters['Tin'],
+            case.pressure_trace.p_EOC, case.ignition_delay, case.first_stage, case.T_EOC,
+            case.experiment_parameters['spacers'], case.experiment_parameters['shims']])))
         if plot:
             ax.plot(case.pressure_trace.zeroed_time, case.pressure_trace.pressure,
                     label=case.experiment_parameters['date'])

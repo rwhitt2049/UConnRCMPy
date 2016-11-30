@@ -223,7 +223,7 @@ class ExperimentalPressureTrace(object):
         max_p = np.amax(self.pressure)
         max_p_idx = np.argmax(self.pressure)
         min_p_idx = max_p_idx - 100
-        while self.pressure[min_p_idx] >= self.pressure[min_p_idx - 50]:
+        while self.pressure[min_p_idx] >= self.pressure[min_p_idx - 100]:
             min_p_idx -= 1
 
         p_EOC = np.amax(self.pressure[0:min_p_idx])
@@ -264,6 +264,29 @@ class ExperimentalPressureTrace(object):
                                         indep_var[i]))
         ddt[np.isinf(ddt)] = 0
         return ddt
+
+
+class iBuOHExperimentalPressureTrace(ExperimentalPressureTrace):
+    """Process an isobutanol experimental pressure trace.
+
+    These pressure traces do not have an associated voltage trace.
+    """
+    def __init__(self, file_path, initial_pressure_in_torr):
+        self.signal = np.genfromtxt(str(file_path))
+
+        self.time = self.signal[:, 0]
+        self.frequency = np.rint(1/self.time[1])
+
+        self.filtered_pressure = VoltageTrace.filtering(self, self.signal[:, 1])
+        self.pressure = VoltageTrace.smoothing(self, self.filtered_pressure)
+        pressure_start = np.average(self.pressure[20:500])
+        self.pressure -= pressure_start
+        self.pressure += initial_pressure_in_torr*one_atm_in_bar/one_atm_in_torr
+
+        self.p_EOC, self.EOC_idx, self.is_reactive = self.find_EOC()
+        self.derivative = self.calculate_derivative(self.pressure, self.time)
+        self.smoothed_derivative = VoltageTrace.smoothing(self, self.derivative, span=21)
+        self.zeroed_time = self.time - self.time[self.EOC_idx]
 
 
 class AltExperimentalPressureTrace(ExperimentalPressureTrace):
