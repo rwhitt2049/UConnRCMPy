@@ -305,7 +305,7 @@ class AltExperiment(Experiment):
     """Contains all the information of a single alternate RCM experiment.
     See the documentation for `Experiment` for attribute descriptions.
     """
-    def __init__(self, file_path=None):
+    def __init__(self, file_path=None, cti_file=None, cti_source=None, copy=True):
         self.resolve_file_path(file_path)
         self.experiment_parameters = self.parse_file_name(self.file_path)
         self.pressure_trace = AltExperimentalPressureTrace(self.file_path,
@@ -313,8 +313,19 @@ class AltExperiment(Experiment):
         self.compression_time = None
         self.output_end_time = None
         self.offset_points = None
+        if cti_source is None and cti_file is None:
+            raise ValueError('One of cti_file or cti_source must be specified')
+        elif cti_source is not None and cti_file is not None:
+            raise ValueError('Only one of cti_file or cti_source can be specified')
+        elif cti_source is None:
+            self.cti_file = Path(cti_file).resolve()
+            with open(str(cti_file), 'r') as in_file:
+                self.cti_source = in_file.read()
+        else:
+            self.cti_source = cti_source
         self.process_pressure_trace()
-        self.copy_to_clipboard()
+        if copy:
+            self.copy_to_clipboard()
 
     def __repr__(self):
         return 'AltExperiment(file_path={self.file_path!r})'.format(self=self)
